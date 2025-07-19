@@ -230,4 +230,10 @@ Please note:
 
 ---
 
-**Need help?** Include the debug information above when reporting issues!
+## Screenshots
+
+<img width="1344" height="1342" alt="0  Auto Discovery" src="https://github.com/user-attachments/assets/e3345bb7-ae45-4877-b511-5c20ca3096ad" />
+
+<img width="1344" height="1342" alt="1  Home Screen" src="https://github.com/user-attachments/assets/b83e470c-d85e-4bc0-91ee-94f4bee7aff4" />
+
+
