@@ -27,6 +27,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Explicitly ensure config files are present
+COPY config/app_config.py config/app_config.py
+COPY config/__init__.py config/__init__.py
+
 # Create directories for runtime data
 RUN mkdir -p config logs
 
