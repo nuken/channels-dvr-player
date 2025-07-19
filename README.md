@@ -11,24 +11,6 @@ A web-based live TV streaming application that integrates with Channels DVR to c
 - **📊 Program Guide**: Real-time program information and progress tracking
 - **⚙️ Easy Setup**: Simple web interface for configuration
 
-## � Screenshots
-
-### Main Dashboard
-![Main Dashboard](docs/screenshots/main-dashboard.png)
-*Live TV dashboard with channel cards, search functionality, and recently watched channels*
-
-### Player Interface
-![Player Interface](docs/screenshots/player-interface.png)
-*Clean video player with channel list, program information, and playback controls*
-
-### Channel Setup
-![Channel Setup](docs/screenshots/channel-setup.png)
-*Easy channel management with sync from Channels DVR and toggle controls*
-
-### Playlist Management
-![Playlist Management](docs/screenshots/playlist-management.png)
-*Drag-and-drop playlist builder for organizing your favorite channels*
-
 ## �🚀 Quick Start
 
 ### Prerequisites
