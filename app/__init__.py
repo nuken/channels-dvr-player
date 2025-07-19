@@ -1,4 +1,12 @@
+import sys
+import os
 from flask import Flask
+
+# Add the parent directory to Python path to ensure config imports work
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 from config.app_config import AppConfig
 
 
