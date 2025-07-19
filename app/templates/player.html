@@ -81,13 +81,6 @@ header, footer {
                             Your browser does not support the video tag.
                         </video>
                         
-                        <!-- Custom Stop Button -->
-                        <div id="stopButton" class="hidden absolute top-4 right-4 z-20">
-                            <button onclick="stopChannel()" class="bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg shadow-lg transition-colors" title="Stop Channel">
-                                <i class="fas fa-stop text-lg"></i>
-                            </button>
-                        </div>
-                        
                         <!-- Loading Overlay -->
                         <div id="loadingOverlay" class="hidden absolute inset-0 bg-black/80 flex items-center justify-center">
                             <div class="text-center text-white">
@@ -198,7 +191,6 @@ let playlists = {{ playlists | tojson | safe }};
 let channels = {{ channels | tojson | safe }};
 let guideData = {};
 let hls = null;
-let stopButtonTimeout = null;
 
 // Cookie helper functions
 function setCookie(name, value, days = 30) {
@@ -281,93 +273,28 @@ function setupEventListeners() {
     const video = document.getElementById('videoPlayer');
     const videoContainer = video.parentElement;
     
-    // Show stop button on hover over video area
-    let isHovering = false;
-    
-    videoContainer.addEventListener('mouseenter', () => {
-        if (currentChannel && !isHovering) {
-            isHovering = true;
-            // Clear any existing timeout when hovering
-            if (stopButtonTimeout) {
-                clearTimeout(stopButtonTimeout);
-                stopButtonTimeout = null;
-            }
-            // Show stop button on hover
-            document.getElementById('stopButton').classList.remove('hidden');
-        }
-    });
-    
-    // Hide stop button when leaving video area - always hide with video controls
-    videoContainer.addEventListener('mouseleave', () => {
-        if (currentChannel) {
-            isHovering = false;
-            // Set timeout to hide button after leaving hover area
-            stopButtonTimeout = setTimeout(() => {
-                document.getElementById('stopButton').classList.add('hidden');
-            }, 1000); // Hide after 1 second, same as video controls
-        }
-    });
-    
     video.addEventListener('loadstart', () => {
         if (video.src && video.src !== '') {
             showLoading(true);
-            // Hide stop button during loading
-            document.getElementById('stopButton').classList.add('hidden');
         }
     });
     video.addEventListener('canplay', () => {
         showLoading(false);
-        // Show stop button when video is ready to play (but not playing yet)
-        if (currentChannel) {
-            document.getElementById('stopButton').classList.remove('hidden');
-        }
     });
     video.addEventListener('play', () => {
-        // Show stop button briefly when video starts playing, then hide with controls
-        if (currentChannel) {
-            document.getElementById('stopButton').classList.remove('hidden');
-            
-            // Clear any existing timeout
-            if (stopButtonTimeout) {
-                clearTimeout(stopButtonTimeout);
-            }
-            
-            // Hide stop button after 3 seconds - same as video controls
-            stopButtonTimeout = setTimeout(() => {
-                document.getElementById('stopButton').classList.add('hidden');
-            }, 3000);
-            
-            // Update live indicator to green/live state
-            updateLiveIndicator(true);
-        }
+        // Update live indicator to green/live state
+        updateLiveIndicator(true);
     });
     
     // Remove complex buffering detection - keep it simple
     video.addEventListener('pause', () => {
-        // Show stop button when paused (user or buffering) - hide with timeout like controls
-        if (currentChannel) {
-            document.getElementById('stopButton').classList.remove('hidden');
-            
-            // Clear any existing timeout
-            if (stopButtonTimeout) {
-                clearTimeout(stopButtonTimeout);
-            }
-            
-            // Hide after 3 seconds even when paused - matches video control behavior
-            stopButtonTimeout = setTimeout(() => {
-                document.getElementById('stopButton').classList.add('hidden');
-            }, 3000);
-            
-            // Update live indicator to paused state
-            updateLiveIndicator(false);
-        }
+        // Update live indicator to paused state
+        updateLiveIndicator(false);
     });
     video.addEventListener('error', (e) => {
         // Only handle errors if we have a source and current channel
         if (video.src && video.src !== '' && currentChannel) {
             handleVideoError(e);
-            // Hide stop button on error
-            document.getElementById('stopButton').classList.add('hidden');
             // Reset live indicator to ready state on error
             updateLiveIndicator(false);
         }
@@ -455,9 +382,6 @@ function selectPlaylist(playlist) {
     
     // Stop any currently playing video and clean up
     stopCurrentVideo();
-    
-    // Hide stop button when switching playlists
-    document.getElementById('stopButton').classList.add('hidden');
     
     // Save playlist selection to cookie
     setCookie('selectedPlaylist', playlist.name);
@@ -635,8 +559,6 @@ function selectChannel(channel) {
     // Hide no channel overlay
     showNoChannelOverlay(false);
     
-    // Don't show stop button immediately - let video events handle it
-    
     // Show current program bar
     updateCurrentProgramBar();
     
@@ -663,9 +585,6 @@ function stopChannel() {
     
     // Stop and clear video
     stopCurrentVideo();
-    
-    // Hide stop button
-    document.getElementById('stopButton').classList.add('hidden');
     
     // Show no channel overlay
     showNoChannelOverlay(true);
@@ -819,17 +738,12 @@ function loadVideoStream(streamUrl) {
             video.play().catch(e => {
                 console.log('Autoplay failed:', e);
                 showLoading(false);
-                if (currentChannel) {
-                    document.getElementById('stopButton').classList.remove('hidden');
-                }
             });
         });
         
         hls.on(Hls.Events.ERROR, (event, data) => {
             console.error('HLS error:', data);
             if (data.fatal) {
-                document.getElementById('stopButton').classList.add('hidden');
-                
                 // Try fallback for codec issues
                 if (data.type === Hls.ErrorTypes.MEDIA_ERROR || 
                     data.details === 'manifestIncompatibleCodecsError') {
@@ -861,9 +775,6 @@ function loadVideoStream(streamUrl) {
         video.play().catch(e => {
             console.log('Autoplay failed:', e);
             showLoading(false);
-            if (currentChannel) {
-                document.getElementById('stopButton').classList.remove('hidden');
-            }
         });
     } else {
         console.error('HLS not supported in this browser');
@@ -936,9 +847,6 @@ function loadVideoStreamWithUrl(streamUrl) {
             video.play().catch(e => {
                 console.log('Fallback autoplay failed:', e);
                 showLoading(false);
-                if (currentChannel) {
-                    document.getElementById('stopButton').classList.remove('hidden');
-                }
             });
         });
         
