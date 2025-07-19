@@ -271,7 +271,6 @@ function setupEventListeners() {
     
     // Video events - only handle errors when we have a source
     const video = document.getElementById('videoPlayer');
-    const videoContainer = video.parentElement;
     
     video.addEventListener('loadstart', () => {
         if (video.src && video.src !== '') {
