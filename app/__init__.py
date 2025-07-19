@@ -1,13 +1,16 @@
 import sys
 import os
 from flask import Flask
+import importlib.util
 
-# Add the parent directory to Python path to ensure config imports work
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
-from config.app_config import AppConfig
+# Load AppConfig using absolute file path
+config_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config', 'app_config.py')
+spec = importlib.util.spec_from_file_location("app_config", config_file_path)
+if spec is None or spec.loader is None:
+    raise ImportError(f"Cannot load config from {config_file_path}")
+app_config_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(app_config_module)
+AppConfig = app_config_module.AppConfig
 
 
 def create_app():
