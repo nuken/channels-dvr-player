@@ -1,0 +1,1398 @@
+{% extends "base.html" %}
+
+{% block title %}{{ config.get_page_title('player') }}{% endblock %}
+
+{% block content %}
+<style>
+/* Override base template's main container for player page */
+main {
+    overflow: hidden !important;
+    height: 100vh !important;
+}
+
+/* Hide base template header and footer for player page */
+header, footer {
+    display: none !important;
+}
+</style>
+
+<div id="app" class="flex flex-col bg-black h-screen overflow-hidden">
+    
+    <!-- Top Navigation Bar -->
+    <div class="bg-gradient-to-r from-gray-900/95 to-black/95 backdrop-blur-xl border-b border-gray-700/30 px-6 py-4 flex items-center justify-between relative z-50 flex-shrink-0">
+        <div class="flex items-center space-x-6">
+            <!-- Logo/Brand -->
+            <div class="flex items-center">
+                <div class="w-10 h-10 bg-gradient-to-br from-red-600 to-red-700 rounded-full flex items-center justify-center mr-3 shadow-lg">
+                    <i class="fas fa-play text-xl text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-white">Live TV</h1>
+                    <p class="text-xs text-gray-400" id="currentPlaylistName">Select Playlist</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Controls -->
+        <div class="flex items-center space-x-3">
+            <!-- Live Status Indicator -->
+            <div id="liveIndicator" class="flex items-center space-x-2 bg-gray-600/20 backdrop-blur-sm border border-gray-500/30 rounded-full px-3 py-1.5">
+                <div id="liveIndicatorDot" class="w-2 h-2 bg-gray-500 rounded-full"></div>
+                <span id="liveIndicatorText" class="text-gray-400 text-xs font-medium">READY</span>
+            </div>
+            
+            <!-- Time Display -->
+            <div class="bg-gray-800/50 backdrop-blur-sm border border-gray-600/30 rounded-lg px-3 py-2">
+                <div class="text-white text-sm font-mono" id="currentTime"></div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="flex items-center space-x-2">
+                <!-- Playlist Button -->
+                <a href="{{ url_for('main.playlist') }}" class="text-gray-400 hover:text-white transition-colors p-2.5 rounded-lg bg-gray-800/30 hover:bg-gray-700/50 border border-gray-600/30" title="Manage Playlists">
+                    <i class="fas fa-heart text-lg"></i>
+                </a>
+                
+                <!-- Back to Home -->
+                <a href="{{ url_for('main.index') }}" class="text-gray-400 hover:text-white transition-colors p-2.5 rounded-lg bg-gray-800/30 hover:bg-gray-700/50 border border-gray-600/30" title="Back to Home">
+                    <i class="fas fa-home text-lg"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Content Area -->
+    <div class="relative bg-black flex-1 flex flex-col overflow-hidden">
+        
+        <!-- Player View -->
+        <div id="playerView" class="flex-1 flex min-h-0 overflow-hidden">
+            
+            <!-- Video Player -->
+            <div class="flex-1 flex flex-col bg-black">
+                <!-- Video Container positioned at top -->
+                <div class="bg-black p-4 flex-shrink-0">
+                    <div class="relative bg-black aspect-video w-full object-contain">
+                        <!-- Video Element -->
+                        <video id="videoPlayer" 
+                               class="w-full h-full object-contain"
+                               controls 
+                               crossorigin="anonymous"
+                               preload="none">
+                            Your browser does not support the video tag.
+                        </video>
+                        
+                        <!-- Custom Stop Button -->
+                        <div id="stopButton" class="hidden absolute top-4 right-4 z-20">
+                            <button onclick="stopChannel()" class="bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg shadow-lg transition-colors" title="Stop Channel">
+                                <i class="fas fa-stop text-lg"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- Loading Overlay -->
+                        <div id="loadingOverlay" class="hidden absolute inset-0 bg-black/80 flex items-center justify-center">
+                            <div class="text-center text-white">
+                                <div class="animate-spin w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+                                <div class="text-lg font-medium">Loading Channel</div>
+                                <div class="text-sm text-gray-400" id="loadingChannelName"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- No Channel Selected -->
+                        <div id="noChannelOverlay" class="absolute inset-0 bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
+                            <div class="text-center text-white">
+                                <i class="fas fa-tv text-6xl text-gray-600 mb-6"></i>
+                                <h2 class="text-2xl font-bold mb-4">Select a Channel</h2>
+                                <p class="text-gray-400 mb-6">Choose a playlist and channel to start watching</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Current Program Info Bar -->
+                <div class="bg-gradient-to-r from-gray-900/95 to-black/95 backdrop-blur-xl border-t border-gray-700/30 p-4 flex-shrink-0" id="currentProgramBar" style="display: none;">
+                    <div class="max-w-4xl mx-auto">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-4">
+                                <div class="text-white font-semibold" id="currentChannelName">Channel Name</div>
+                                <div class="text-gray-400 text-sm" id="currentProgramTitle">Program Title</div>
+                            </div>
+                            <div class="text-gray-400 text-sm" id="currentProgramTime">--:-- - --:--</div>
+                        </div>
+                        <div class="mt-2">
+                            <div class="w-full bg-gray-700 rounded-full h-1">
+                                <div class="bg-slate-400 h-1 rounded-full transition-all duration-300" id="currentProgramProgress" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Channel Sidebar -->
+            <div class="w-80 bg-gradient-to-b from-gray-900/95 to-black/95 backdrop-blur-xl border-l border-gray-700/30 flex flex-col h-full">
+                
+                <!-- Channel List Header -->
+                <div class="p-4 border-b border-gray-700/30 flex-shrink-0">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-lg font-semibold text-white">Playlist</h3>
+                        <span class="text-xs text-gray-400" id="channelCount">0 channels</span>
+                    </div>
+                    
+                    <!-- Playlist Selector -->
+                    <div class="relative">
+                        <button id="playlistButton" class="w-full bg-gray-800/50 hover:bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-2 text-white text-sm flex items-center justify-between transition-colors">
+                            <div class="flex items-center space-x-2">
+                                <i class="fas fa-list"></i>
+                                <span id="playlistButtonText">Choose Playlist</span>
+                            </div>
+                            <i class="fas fa-chevron-down text-xs"></i>
+                        </button>
+                        
+                        <!-- Dropdown -->
+                        <div id="playlistDropdown" class="hidden absolute top-full mt-2 w-full bg-gray-800/95 backdrop-blur-xl border border-gray-600/30 rounded-lg shadow-2xl shadow-black/50 z-50">
+                            <div class="p-2 max-h-60 overflow-y-auto" id="playlistList">
+                                <!-- Playlists will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Channel List - Scrollable without scrollbar -->
+                <div class="flex-1 overflow-y-auto scrollbar-hide min-h-0" id="channelList">
+                    <!-- Channels will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Hide scrollbars but keep scrolling functionality */
+.scrollbar-hide {
+    -ms-overflow-style: none;  /* Internet Explorer 10+ */
+    scrollbar-width: none;  /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Safari and Chrome */
+    width: 0;
+    background: transparent;
+}
+.scrollbar-hide::-webkit-scrollbar-track {
+    display: none;
+}
+.scrollbar-hide::-webkit-scrollbar-thumb {
+    display: none;
+}
+
+/* Ensure channel list scrolling doesn't propagate to body */
+#channelList {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+</style>
+
+<script>
+// Global variables
+let currentPlaylist = null;
+let currentChannel = null;
+let playlists = {{ playlists | tojson | safe }};
+let channels = {{ channels | tojson | safe }};
+let guideData = {};
+let hls = null;
+let stopButtonTimeout = null;
+
+// Cookie helper functions
+function setCookie(name, value, days = 30) {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/`;
+}
+
+function getCookie(name) {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+        if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length, c.length));
+    }
+    return null;
+}
+
+// Initialize the app
+document.addEventListener('DOMContentLoaded', function() {
+    initializeApp();
+});
+
+function initializeApp() {
+    // Update time every second
+    updateCurrentTime();
+    setInterval(updateCurrentTime, 1000);
+    
+    // Populate playlist dropdown
+    populatePlaylistDropdown();
+    
+    // Set up event listeners
+    setupEventListeners();
+    
+    // Start periodic program updates
+    startProgramUpdates();
+    
+    // Check for URL parameters (channel selection from search)
+    const urlParams = new URLSearchParams(window.location.search);
+    const channelIdFromUrl = urlParams.get('channel');
+    
+    // Check for saved playlist preference
+    const savedPlaylistName = getCookie('selectedPlaylist');
+    let playlistToSelect = null;
+    
+    if (savedPlaylistName && playlists.length > 0) {
+        // Try to find the saved playlist
+        playlistToSelect = playlists.find(playlist => playlist.name === savedPlaylistName);
+    }
+    
+    // Select saved playlist or first available playlist
+    if (playlistToSelect) {
+        selectPlaylist(playlistToSelect);
+    } else if (playlists.length > 0) {
+        selectPlaylist(playlists[0]);
+    }
+    
+    // Auto-select and play channel if specified in URL
+    if (channelIdFromUrl) {
+        setTimeout(() => {
+            selectChannelById(parseInt(channelIdFromUrl));
+            // Clean up URL parameter after selecting channel
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, newUrl);
+        }, 500); // Small delay to ensure playlist is loaded
+    }
+}
+
+function setupEventListeners() {
+    // Playlist dropdown
+    document.getElementById('playlistButton').addEventListener('click', togglePlaylistDropdown);
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#playlistButton') && !e.target.closest('#playlistDropdown')) {
+            closePlaylistDropdown();
+        }
+    });
+    
+    // Video events - only handle errors when we have a source
+    const video = document.getElementById('videoPlayer');
+    const videoContainer = video.parentElement;
+    
+    // Show stop button on hover over video area
+    let isHovering = false;
+    
+    videoContainer.addEventListener('mouseenter', () => {
+        if (currentChannel && !isHovering) {
+            isHovering = true;
+            // Clear any existing timeout when hovering
+            if (stopButtonTimeout) {
+                clearTimeout(stopButtonTimeout);
+                stopButtonTimeout = null;
+            }
+            // Show stop button on hover
+            document.getElementById('stopButton').classList.remove('hidden');
+        }
+    });
+    
+    // Hide stop button when leaving video area - always hide with video controls
+    videoContainer.addEventListener('mouseleave', () => {
+        if (currentChannel) {
+            isHovering = false;
+            // Set timeout to hide button after leaving hover area
+            stopButtonTimeout = setTimeout(() => {
+                document.getElementById('stopButton').classList.add('hidden');
+            }, 1000); // Hide after 1 second, same as video controls
+        }
+    });
+    
+    video.addEventListener('loadstart', () => {
+        if (video.src && video.src !== '') {
+            showLoading(true);
+            // Hide stop button during loading
+            document.getElementById('stopButton').classList.add('hidden');
+        }
+    });
+    video.addEventListener('canplay', () => {
+        showLoading(false);
+        // Show stop button when video is ready to play (but not playing yet)
+        if (currentChannel) {
+            document.getElementById('stopButton').classList.remove('hidden');
+        }
+    });
+    video.addEventListener('play', () => {
+        // Show stop button briefly when video starts playing, then hide with controls
+        if (currentChannel) {
+            document.getElementById('stopButton').classList.remove('hidden');
+            
+            // Clear any existing timeout
+            if (stopButtonTimeout) {
+                clearTimeout(stopButtonTimeout);
+            }
+            
+            // Hide stop button after 3 seconds - same as video controls
+            stopButtonTimeout = setTimeout(() => {
+                document.getElementById('stopButton').classList.add('hidden');
+            }, 3000);
+            
+            // Update live indicator to green/live state
+            updateLiveIndicator(true);
+        }
+    });
+    
+    // Remove complex buffering detection - keep it simple
+    video.addEventListener('pause', () => {
+        // Show stop button when paused (user or buffering) - hide with timeout like controls
+        if (currentChannel) {
+            document.getElementById('stopButton').classList.remove('hidden');
+            
+            // Clear any existing timeout
+            if (stopButtonTimeout) {
+                clearTimeout(stopButtonTimeout);
+            }
+            
+            // Hide after 3 seconds even when paused - matches video control behavior
+            stopButtonTimeout = setTimeout(() => {
+                document.getElementById('stopButton').classList.add('hidden');
+            }, 3000);
+            
+            // Update live indicator to paused state
+            updateLiveIndicator(false);
+        }
+    });
+    video.addEventListener('error', (e) => {
+        // Only handle errors if we have a source and current channel
+        if (video.src && video.src !== '' && currentChannel) {
+            handleVideoError(e);
+            // Hide stop button on error
+            document.getElementById('stopButton').classList.add('hidden');
+            // Reset live indicator to ready state on error
+            updateLiveIndicator(false);
+        }
+    });
+}
+
+// Function to update the live indicator appearance
+function updateLiveIndicator(isLive) {
+    const indicator = document.getElementById('liveIndicator');
+    const dot = document.getElementById('liveIndicatorDot');
+    const text = document.getElementById('liveIndicatorText');
+    
+    if (isLive) {
+        // Live state - green with pulse
+        indicator.className = 'flex items-center space-x-2 bg-green-600/20 backdrop-blur-sm border border-green-500/30 rounded-full px-3 py-1.5';
+        dot.className = 'w-2 h-2 bg-green-500 rounded-full animate-pulse';
+        text.className = 'text-green-400 text-xs font-medium';
+        text.textContent = 'LIVE';
+    } else {
+        // Ready/paused state - gray
+        indicator.className = 'flex items-center space-x-2 bg-gray-600/20 backdrop-blur-sm border border-gray-500/30 rounded-full px-3 py-1.5';
+        dot.className = 'w-2 h-2 bg-gray-500 rounded-full';
+        text.className = 'text-gray-400 text-xs font-medium';
+        text.textContent = 'READY';
+    }
+}
+
+function updateCurrentTime() {
+    const now = new Date();
+    const timeString = now.toLocaleTimeString('en-US', { 
+        hour12: true, 
+        hour: 'numeric', 
+        minute: '2-digit' 
+    });
+    document.getElementById('currentTime').textContent = timeString;
+}
+
+function togglePlaylistDropdown() {
+    const dropdown = document.getElementById('playlistDropdown');
+    dropdown.classList.toggle('hidden');
+}
+
+function closePlaylistDropdown() {
+    document.getElementById('playlistDropdown').classList.add('hidden');
+}
+
+function populatePlaylistDropdown() {
+    const playlistList = document.getElementById('playlistList');
+    
+    if (playlists.length === 0) {
+        playlistList.innerHTML = `
+            <div class="px-3 py-4 text-center text-gray-400 text-sm">
+                <i class="fas fa-list mb-2"></i>
+                <div>No playlists available</div>
+                <a href="/playlist" class="text-red-400 hover:text-red-300 text-xs">Create a playlist</a>
+            </div>
+        `;
+        return;
+    }
+    
+    playlistList.innerHTML = playlists.map(playlist => {
+        const isTemporary = playlist.isTemporary;
+        const buttonClass = isTemporary 
+            ? 'w-full text-left px-3 py-2 text-white text-sm rounded-lg border border-blue-500/30 bg-blue-600/10 transition-colors flex items-center justify-between hover:bg-blue-600/20'
+            : 'w-full text-left px-3 py-2 text-white text-sm rounded-lg border border-transparent transition-colors flex items-center justify-between hover:bg-gray-700/50';
+            
+        return `
+            <button onclick="selectPlaylist(${JSON.stringify(playlist).replace(/"/g, '&quot;')})" 
+                    class="${buttonClass}">
+                <div>
+                    <div class="font-medium flex items-center">
+                        ${isTemporary ? '<i class="fas fa-search text-blue-400 mr-2 text-xs"></i>' : ''}
+                        ${playlist.name}
+                    </div>
+                    <div class="text-xs ${isTemporary ? 'text-blue-300' : 'text-gray-400'}">${playlist.channels.length} channels</div>
+                </div>
+            </button>
+        `;
+    }).join('');
+}
+
+function selectPlaylist(playlist) {
+    currentPlaylist = playlist;
+    currentChannel = null;
+    
+    // Stop any currently playing video and clean up
+    stopCurrentVideo();
+    
+    // Hide stop button when switching playlists
+    document.getElementById('stopButton').classList.add('hidden');
+    
+    // Save playlist selection to cookie
+    setCookie('selectedPlaylist', playlist.name);
+    
+    // Update UI
+    document.getElementById('playlistButtonText').textContent = playlist.name;
+    document.getElementById('currentPlaylistName').textContent = playlist.name;
+    
+    // Close dropdown
+    closePlaylistDropdown();
+    
+    // Populate channels
+    populateChannels();
+    
+    // Load guide data
+    loadGuideData();
+    
+    // Show no channel overlay
+    showNoChannelOverlay(true);
+}
+
+function populateChannels() {
+    const channelList = document.getElementById('channelList');
+    const channels = currentPlaylist ? currentPlaylist.channels : [];
+    
+    document.getElementById('channelCount').textContent = `${channels.length} channels`;
+    
+    if (channels.length === 0) {
+        channelList.innerHTML = `
+            <div class="p-8 text-center text-gray-400">
+                <i class="fas fa-tv text-3xl mb-4"></i>
+                <p class="text-sm">No channels found</p>
+                <p class="text-xs mt-2">Select a different playlist</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Add info message for temporary playlists
+    let headerMessage = '';
+    if (currentPlaylist && currentPlaylist.isTemporary) {
+        headerMessage = `
+            <div class="p-4 bg-blue-600/10 border-b border-blue-500/20">
+                <div class="flex items-center text-blue-300 text-sm">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    <span>This channel was found through search.</span>
+                </div>
+            </div>
+        `;
+    }
+    
+    channelList.innerHTML = headerMessage + channels.map(channel => `
+        <div class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors cursor-pointer channel-item"
+             data-channel-id="${channel.id}"
+             onclick="selectChannel(${JSON.stringify(channel).replace(/"/g, '&quot;')})">
+            
+            <div class="p-4">
+                <div class="flex items-start space-x-3">
+                    <!-- Channel Logo -->
+                    ${channel.logo_url ? 
+                        `<img src="${channel.logo_url}" 
+                             alt="${channel.name}"
+                             class="w-12 h-12 rounded-lg object-contain bg-gray-800/30 border border-gray-600/50 p-1 channel-logo"
+                             onload="adjustLogoBackground(this)"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                         <div class="w-12 h-12 bg-gray-700 rounded-lg flex items-center justify-center border border-gray-600/50" style="display: none;">
+                             <i class="fas fa-tv text-gray-400"></i>
+                         </div>` :
+                        `<div class="w-12 h-12 bg-gray-700 rounded-lg flex items-center justify-center border border-gray-600/50">
+                             <i class="fas fa-tv text-gray-400"></i>
+                         </div>`
+                    }
+                    
+                    <div class="flex-1 min-w-0">
+                        <!-- Current Program (Primary) -->
+                        <div class="current-program-info">
+                            <div class="text-xs text-gray-500">
+                                No program information
+                            </div>
+                        </div>
+                        
+                        <!-- Channel Name (Secondary) -->
+                        <div class="mt-1">
+                            <h4 class="text-gray-400 text-xs truncate">${channel.name}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Logo brightness detection and background adjustment
+function adjustLogoBackground(img) {
+    // Create a canvas to analyze the image
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Wait for image to fully load
+    if (!img.complete) {
+        img.addEventListener('load', () => adjustLogoBackground(img));
+        return;
+    }
+    
+    try {
+        // Set canvas size to match image
+        canvas.width = img.naturalWidth || 48;
+        canvas.height = img.naturalHeight || 48;
+        
+        // Draw image to canvas
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Get image data
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        let totalBrightness = 0;
+        let pixelCount = 0;
+        let transparentPixels = 0;
+        
+        // Calculate average brightness and transparency
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const alpha = data[i + 3];
+            
+            // Skip fully transparent pixels
+            if (alpha < 10) {
+                transparentPixels++;
+                continue;
+            }
+            
+            // Calculate luminance using standard formula
+            const brightness = (0.299 * r + 0.587 * g + 0.114 * b);
+            totalBrightness += brightness;
+            pixelCount++;
+        }
+        
+        const avgBrightness = pixelCount > 0 ? totalBrightness / pixelCount : 0;
+        const transparencyRatio = transparentPixels / (data.length / 4);
+        
+        // Adjust background based on brightness and transparency
+        if (avgBrightness < 80 || transparencyRatio > 0.7) {
+            // Dark or very transparent logo - add light background
+            img.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+            img.style.padding = '2px';
+        } else if (avgBrightness > 200) {
+            // Very bright logo - add darker background
+            img.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+            img.style.padding = '2px';
+        }
+        // Medium brightness logos keep default background
+        
+    } catch (error) {
+        // If canvas fails (CORS, etc.), apply a safe fallback for dark backgrounds
+        console.log('Logo analysis failed, applying fallback background');
+        img.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+    }
+}
+
+function selectChannel(channel) {
+    currentChannel = channel;
+    
+    // Update active channel styling
+    document.querySelectorAll('.channel-item').forEach(item => {
+        item.classList.remove('bg-blue-600/20', 'border-blue-500/50');
+    });
+    
+    const selectedItem = document.querySelector(`[data-channel-id="${channel.id}"]`);
+    if (selectedItem) {
+        selectedItem.classList.add('bg-blue-600/20', 'border-blue-500/50');
+    }
+    
+    // Hide no channel overlay
+    showNoChannelOverlay(false);
+    
+    // Don't show stop button immediately - let video events handle it
+    
+    // Show current program bar
+    updateCurrentProgramBar();
+    
+    // Add to recently watched channels
+    addToRecentChannels(channel);
+    
+    // Load video stream using proxy to bypass CORS
+    const proxyUrl = `/proxy/stream/${channel.id}`;
+    console.log(`Loading channel ${channel.name} via proxy: ${proxyUrl}`);
+    loadVideoStream(proxyUrl);
+    
+    // Update loading overlay
+    document.getElementById('loadingChannelName').textContent = channel.name;
+}
+
+function stopChannel() {
+    // Clear current channel
+    currentChannel = null;
+    
+    // Remove active channel styling
+    document.querySelectorAll('.channel-item').forEach(item => {
+        item.classList.remove('bg-red-600/20', 'border-red-500/50');
+    });
+    
+    // Stop and clear video
+    stopCurrentVideo();
+    
+    // Hide stop button
+    document.getElementById('stopButton').classList.add('hidden');
+    
+    // Show no channel overlay
+    showNoChannelOverlay(true);
+    
+    // Hide current program bar
+    document.getElementById('currentProgramBar').style.display = 'none';
+}
+
+function selectChannelById(channelId) {
+    // Find the channel in all playlists first
+    let targetChannel = null;
+    let targetPlaylist = null;
+    
+    for (const playlist of playlists) {
+        const channel = playlist.channels.find(ch => ch.id === channelId);
+        if (channel) {
+            targetChannel = channel;
+            targetPlaylist = playlist;
+            break;
+        }
+    }
+    
+    if (targetChannel && targetPlaylist) {
+        // Channel found in existing playlist
+        if (currentPlaylist?.id !== targetPlaylist.id) {
+            selectPlaylist(targetPlaylist);
+            setTimeout(() => {
+                selectChannel(targetChannel);
+            }, 200);
+        } else {
+            selectChannel(targetChannel);
+        }
+        console.log(`Auto-selected channel: ${targetChannel.name} from playlist: ${targetPlaylist.name}`);
+    } else {
+        // Channel not in any playlist - fetch it from database and create temporary playlist
+        console.log(`Channel ${channelId} not found in playlists, fetching from database...`);
+        fetchChannelAndCreateTemporaryPlaylist(channelId);
+    }
+}
+
+async function fetchChannelAndCreateTemporaryPlaylist(channelId) {
+    try {
+        showLoading(true);
+        
+        // Fetch the channel details from the database
+        const response = await fetch(`/api/channels/${channelId}`);
+        if (!response.ok) {
+            throw new Error(`Channel not found: ${response.status}`);
+        }
+        
+        const channelData = await response.json();
+        
+        if (channelData.success && channelData.channel) {
+            const channel = channelData.channel;
+            
+            // Create a temporary "Search Results" playlist
+            const temporaryPlaylist = {
+                id: 'temp-search',
+                name: '🔍 Search Results',
+                channels: [channel],
+                isTemporary: true
+            };
+            
+            // Add to playlists array if not already there
+            const existingTempIndex = playlists.findIndex(p => p.id === 'temp-search');
+            if (existingTempIndex !== -1) {
+                // Update existing temporary playlist
+                playlists[existingTempIndex] = temporaryPlaylist;
+            } else {
+                // Add new temporary playlist
+                playlists.unshift(temporaryPlaylist);
+            }
+            
+            // Update playlist dropdown
+            populatePlaylistDropdown();
+            
+            // Select the temporary playlist and channel
+            selectPlaylist(temporaryPlaylist);
+            setTimeout(() => {
+                selectChannel(channel);
+                showLoading(false);
+            }, 200);
+            
+            console.log(`Created temporary playlist for channel: ${channel.name}`);
+        } else {
+            throw new Error('Channel data not available');
+        }
+    } catch (error) {
+        console.error('Error fetching channel:', error);
+        showLoading(false);
+        
+        // Show error message
+        showErrorMessage(`Channel not available: ${error.message}`);
+        
+        // Fallback - show a message in the no channel overlay
+        const noChannelOverlay = document.getElementById('noChannelOverlay');
+        if (noChannelOverlay) {
+            noChannelOverlay.innerHTML = `
+                <div class="text-center text-white">
+                    <i class="fas fa-exclamation-triangle text-6xl text-yellow-600 mb-6"></i>
+                    <h2 class="text-2xl font-bold mb-4">Channel Not Available</h2>
+                    <p class="text-gray-400 mb-6">This channel could not be loaded. It may have been removed or is currently unavailable.</p>
+                    <button onclick="window.history.back()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-arrow-left mr-2"></i>
+                        Go Back
+                    </button>
+                </div>
+            `;
+            showNoChannelOverlay(true);
+        }
+    }
+}
+
+function loadVideoStream(streamUrl) {
+    const video = document.getElementById('videoPlayer');
+    
+    // Clean up previous HLS instance
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+    
+    showLoading(true);
+    console.log('Loading HLS stream:', streamUrl);
+    
+    // Set crossorigin for HLS streams
+    video.setAttribute('crossorigin', 'anonymous');
+    
+    // Check if HLS.js is supported
+    if (window.Hls && Hls.isSupported()) {
+        // Use HLS.js for browsers that don't support HLS natively
+        hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: false, // Disable for better HDHomeRun compatibility
+            capLevelToPlayerSize: false,
+            maxBufferLength: 30,
+            maxMaxBufferLength: 60,
+            // Better codec handling for HDHomeRun streams
+            forceKeyFrameOnDiscontinuity: true,
+            abrEwmaFastLive: 3.0,
+            abrEwmaSlowLive: 9.0,
+            // Handle AAC audio better
+            enableSoftwareAES: true
+        });
+        
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            console.log('HLS manifest parsed successfully');
+            video.play().catch(e => {
+                console.log('Autoplay failed:', e);
+                showLoading(false);
+                if (currentChannel) {
+                    document.getElementById('stopButton').classList.remove('hidden');
+                }
+            });
+        });
+        
+        hls.on(Hls.Events.ERROR, (event, data) => {
+            console.error('HLS error:', data);
+            if (data.fatal) {
+                document.getElementById('stopButton').classList.add('hidden');
+                
+                // Try fallback for codec issues
+                if (data.type === Hls.ErrorTypes.MEDIA_ERROR || 
+                    data.details === 'manifestIncompatibleCodecsError') {
+                    console.log('Codec error detected, trying fallback...');
+                    tryCodecFallback(streamUrl);
+                } else {
+                    handleVideoError({ 
+                        message: 'Stream loading failed. This may be due to codec compatibility issues.',
+                        details: data.details 
+                    });
+                }
+            }
+        });
+        
+        // Add buffer events for better HDHomeRun handling
+        hls.on(Hls.Events.BUFFER_STALLED, () => {
+            console.log('Buffer stalled - HDHomeRun stream may have issues');
+        });
+        
+        hls.on(Hls.Events.BUFFER_EMPTY, () => {
+            console.log('Buffer empty - waiting for HDHomeRun data');
+        });
+        
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari supports HLS natively
+        console.log('Using Safari native HLS support');
+        video.src = streamUrl;
+        
+        video.play().catch(e => {
+            console.log('Autoplay failed:', e);
+            showLoading(false);
+            if (currentChannel) {
+                document.getElementById('stopButton').classList.remove('hidden');
+            }
+        });
+    } else {
+        console.error('HLS not supported in this browser');
+        handleVideoError({ message: 'HLS not supported' });
+    }
+}
+
+// Fallback function for codec compatibility issues
+function tryCodecFallback(originalUrl) {
+    console.log('Trying codec fallback for HDHomeRun stream');
+    
+    try {
+        // Try to modify the codec parameter for better browser compatibility
+        const url = new URL(originalUrl);
+        const currentCodec = url.searchParams.get('codec');
+        
+        if (currentCodec === 'copy') {
+            // Try h264 instead of copy for better browser support
+            url.searchParams.set('codec', 'h264');
+            console.log('Fallback: Trying h264 codec instead of copy');
+        } else {
+            // Try copy if h264 failed
+            url.searchParams.set('codec', 'copy');
+            console.log('Fallback: Trying copy codec');
+        }
+        
+        const fallbackUrl = url.toString();
+        console.log('Fallback URL:', fallbackUrl);
+        
+        // Clean up and retry with new URL
+        if (hls) {
+            hls.destroy();
+            hls = null;
+        }
+        
+        // Try again with the modified URL
+        setTimeout(() => {
+            loadVideoStreamWithUrl(fallbackUrl);
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Fallback failed:', error);
+        handleVideoError({ 
+            message: 'Unable to play HDHomeRun stream. Codec compatibility issue.',
+            details: 'Both copy and h264 codecs failed' 
+        });
+    }
+}
+
+// Helper function to load with specific URL
+function loadVideoStreamWithUrl(streamUrl) {
+    const video = document.getElementById('videoPlayer');
+    
+    if (window.Hls && Hls.isSupported()) {
+        hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
+            capLevelToPlayerSize: false,
+            maxBufferLength: 30,
+            maxMaxBufferLength: 60,
+            forceKeyFrameOnDiscontinuity: true,
+            enableSoftwareAES: true
+        });
+        
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            console.log('Fallback HLS manifest parsed successfully');
+            video.play().catch(e => {
+                console.log('Fallback autoplay failed:', e);
+                showLoading(false);
+                if (currentChannel) {
+                    document.getElementById('stopButton').classList.remove('hidden');
+                }
+            });
+        });
+        
+        hls.on(Hls.Events.ERROR, (event, data) => {
+            console.error('Fallback HLS error:', data);
+            if (data.fatal) {
+                handleVideoError({ 
+                    message: 'HDHomeRun stream failed with both codec options. The stream may be unavailable or use an unsupported format.',
+                    details: data.details 
+                });
+            }
+        });
+    }
+}
+
+function showLoading(show) {
+    const overlay = document.getElementById('loadingOverlay');
+    if (show) {
+        overlay.classList.remove('hidden');
+    } else {
+        overlay.classList.add('hidden');
+    }
+}
+
+function showNoChannelOverlay(show) {
+    const overlay = document.getElementById('noChannelOverlay');
+    if (show) {
+        overlay.classList.remove('hidden');
+    } else {
+        overlay.classList.add('hidden');
+    }
+}
+
+function stopCurrentVideo() {
+    const video = document.getElementById('videoPlayer');
+    
+    // Pause and reset video
+    video.pause();
+    video.currentTime = 0;
+    video.src = '';
+    video.load(); // This clears the video element
+    
+    // Clean up HLS instance
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+    
+    // Hide loading overlay
+    showLoading(false);
+    
+    // Hide current program bar
+    document.getElementById('currentProgramBar').style.display = 'none';
+    
+    // Reset live indicator to ready state
+    updateLiveIndicator(false);
+}
+
+function handleVideoError(error) {
+    console.error('Video error occurred:', error);
+    console.error('Error context:', {
+        currentChannel: currentChannel,
+        videoSrc: video.src,
+        videoError: video.error,
+        networkState: video.networkState,
+        readyState: video.readyState,
+        timestamp: new Date().toISOString()
+    });
+    
+    showLoading(false);
+    
+    // Show a more user-friendly error message
+    const errorMsg = getErrorMessage(error);
+    showErrorMessage(errorMsg);
+}
+
+function getErrorMessage(error) {
+    if (error.details === 'manifestIncompatibleCodecsError') {
+        return 'This channel uses codecs that are not supported by your browser. Please try a different channel.';
+    } else if (error.code === 4) {
+        return 'Media could not be loaded, either because the server or network failed or because the format is not supported.';
+    } else if (error.message && error.message.includes('Network')) {
+        return 'Network error - please check your connection and try again.';
+    } else if (error.code === 3) {
+        return 'Video decoding error - the video format may not be supported by your browser.';
+    } else if (error.code === 2) {
+        return 'Network error while loading video - please check your connection.';
+    } else {
+        return 'Unable to load video stream. Please try selecting a different channel.';
+    }
+}
+
+function showErrorMessage(message) {
+    // Create or update error overlay
+    let errorOverlay = document.getElementById('errorOverlay');
+    
+    if (!errorOverlay) {
+        // Create error overlay if it doesn't exist
+        const videoContainer = document.querySelector('[id="videoPlayer"]').parentElement;
+        errorOverlay = document.createElement('div');
+        errorOverlay.id = 'errorOverlay';
+        errorOverlay.className = 'absolute inset-0 bg-black/90 flex items-center justify-center z-10';
+        videoContainer.appendChild(errorOverlay);
+    }
+    
+    errorOverlay.innerHTML = `
+        <div class="text-center text-white max-w-md mx-auto p-6">
+            <i class="fas fa-exclamation-triangle text-4xl text-red-500 mb-4"></i>
+            <h3 class="text-lg font-semibold mb-3">Playback Error</h3>
+            <p class="text-sm text-gray-300 mb-6">${message}</p>
+            <button onclick="hideErrorMessage()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                <i class="fas fa-times mr-2"></i>Close
+            </button>
+        </div>
+    `;
+    
+    errorOverlay.classList.remove('hidden');
+}
+
+function hideErrorMessage() {
+    const errorOverlay = document.getElementById('errorOverlay');
+    if (errorOverlay) {
+        errorOverlay.classList.add('hidden');
+    }
+}
+
+async function loadGuideData() {
+    if (!currentPlaylist) return;
+    
+    try {
+        const now = Date.now();
+        lastGuideDataFetch = now;
+        
+        const channelIds = currentPlaylist.channels.map(ch => ch.id);
+        
+        console.log(`Loading guide data for ${channelIds.length} channels...`);
+        
+        const response = await fetch('/api/guide/data', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                channels: channelIds,
+                start_time: new Date().toISOString(),
+                end_time: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString() // 8 hours ahead for better coverage
+            })
+        });
+        
+        if (response.ok) {
+            const newGuideData = await response.json();
+            
+            // Only update if we got valid data
+            if (newGuideData && Object.keys(newGuideData).length > 0) {
+                guideData = newGuideData;
+                console.log(`Guide data updated successfully for ${Object.keys(guideData).length} channels`);
+                
+                // Update channel list with current program info
+                updateChannelListWithPrograms();
+                
+                // Update current program bar if a channel is selected
+                if (currentChannel) {
+                    updateCurrentProgramBar();
+                }
+            } else {
+                console.warn('Received empty guide data, keeping existing data');
+            }
+        } else {
+            console.error('Failed to load guide data:', response.status);
+            // Don't clear existing guide data on error, just log it
+        }
+    } catch (error) {
+        console.error('Failed to load guide data:', error);
+        // Don't clear existing guide data on network errors
+    }
+}
+
+// Cleanup function
+window.addEventListener('beforeunload', function() {
+    stopProgramUpdates();
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+});
+
+// Set up periodic updates for program information
+let programUpdateInterval;
+let guideDataRefreshInterval;
+let lastGuideDataFetch = 0;
+
+function startProgramUpdates() {
+    // Update program progress every 30 seconds
+    programUpdateInterval = setInterval(() => {
+        if (guideData && Object.keys(guideData).length > 0) {
+            updateChannelListWithPrograms();
+            
+            // Update current program bar if channel is selected
+            if (currentChannel) {
+                updateCurrentProgramBar();
+                
+                // Check if current program has ended and reload guide data if needed
+                checkForProgramChanges();
+            }
+        }
+    }, 30000); // 30 seconds
+    
+    // Refresh guide data every 15 minutes to keep it current
+    guideDataRefreshInterval = setInterval(() => {
+        console.log('Refreshing guide data to stay current...');
+        loadGuideData();
+    }, 15 * 60 * 1000); // 15 minutes
+}
+
+// Check if the current program has ended and refresh guide data if needed
+function checkForProgramChanges() {
+    if (!currentChannel || !guideData[currentChannel.id]) return;
+    
+    const now = new Date();
+    const programs = guideData[currentChannel.id];
+    let hasCurrentProgram = false;
+    
+    // Check if any program is currently active
+    for (const program of programs) {
+        try {
+            let startTime, endTime;
+            
+            if (program.start_time.endsWith('Z') || program.start_time.includes('T')) {
+                startTime = new Date(program.start_time);
+                endTime = new Date(program.end_time);
+            } else {
+                startTime = new Date(program.start_time + 'Z');
+                endTime = new Date(program.end_time + 'Z');
+            }
+            
+            if (now >= startTime && now < endTime) {
+                hasCurrentProgram = true;
+                break;
+            }
+        } catch (error) {
+            continue;
+        }
+    }
+    
+    // If no current program found, the guide data might be stale
+    if (!hasCurrentProgram) {
+        const timeSinceLastFetch = Date.now() - lastGuideDataFetch;
+        
+        // Only refresh if it's been more than 5 minutes since last fetch
+        if (timeSinceLastFetch > 5 * 60 * 1000) {
+            console.log('No current program found, refreshing guide data...');
+            loadGuideData();
+        }
+    }
+}
+
+function stopProgramUpdates() {
+    if (programUpdateInterval) {
+        clearInterval(programUpdateInterval);
+        programUpdateInterval = null;
+    }
+    
+    if (guideDataRefreshInterval) {
+        clearInterval(guideDataRefreshInterval);
+        guideDataRefreshInterval = null;
+    }
+}
+
+// Helper function to get current program for a channel
+function getCurrentProgram(channel) {
+    const now = new Date();
+    // Use the channel database ID to match with guide data
+    const guideKey = channel.id;
+    
+    const channelPrograms = guideData[guideKey] || [];
+    
+    const currentProgram = channelPrograms.find(program => {
+        // Convert UTC times to local timezone - handle different formats
+        let startTime, endTime;
+        
+        // Check if already has Z suffix or is already in proper format
+        if (program.start_time.endsWith('Z') || program.start_time.includes('T')) {
+            startTime = new Date(program.start_time);
+            endTime = new Date(program.end_time);
+        } else {
+            // Add Z suffix for UTC if not present
+            startTime = new Date(program.start_time + 'Z');
+            endTime = new Date(program.end_time + 'Z');
+        }
+        
+        const now = new Date();
+        return now >= startTime && now < endTime;
+    });
+    
+    return currentProgram;
+}
+
+// Helper function to calculate program progress percentage
+function getProgramProgress(program) {
+    if (!program) return 0;
+    
+    const now = new Date();
+    // Convert UTC times to local timezone - handle different formats
+    let startTime, endTime;
+    
+    if (program.start_time.endsWith('Z') || program.start_time.includes('T')) {
+        startTime = new Date(program.start_time);
+        endTime = new Date(program.end_time);
+    } else {
+        startTime = new Date(program.start_time + 'Z');
+        endTime = new Date(program.end_time + 'Z');
+    }
+    
+    const totalDuration = endTime - startTime;
+    const elapsed = now - startTime;
+    
+    return Math.min(Math.max((elapsed / totalDuration) * 100, 0), 100);
+}
+
+// Helper function to format program time range
+function formatProgramTime(program) {
+    if (!program) return '--:-- - --:--';
+    
+    // Convert UTC times to local timezone - handle different formats
+    let startTime, endTime;
+    
+    if (program.start_time.endsWith('Z') || program.start_time.includes('T')) {
+        startTime = new Date(program.start_time);
+        endTime = new Date(program.end_time);
+    } else {
+        startTime = new Date(program.start_time + 'Z');
+        endTime = new Date(program.end_time + 'Z');
+    }
+    
+    const start = startTime.toLocaleTimeString('en-US', { 
+        hour12: true, 
+        hour: 'numeric', 
+        minute: '2-digit' 
+    });
+    const end = endTime.toLocaleTimeString('en-US', { 
+        hour12: true, 
+        hour: 'numeric', 
+        minute: '2-digit' 
+    });
+    
+    return `${start} - ${end}`;
+}
+
+// Function to update channel list with program information
+function updateChannelListWithPrograms() {
+    const channelItems = document.querySelectorAll('.channel-item');
+    
+    channelItems.forEach(item => {
+        const channelId = parseInt(item.getAttribute('data-channel-id'));
+        
+        // Find the channel object to get tvg_id
+        const channel = currentPlaylist ? currentPlaylist.channels.find(ch => ch.id === channelId) : null;
+        
+        if (!channel) {
+            return;
+        }
+        
+        const currentProgram = getCurrentProgram(channel);
+        
+        const programElement = item.querySelector('.current-program-info');
+        
+        if (programElement && currentProgram) {
+            const progress = getProgramProgress(currentProgram);
+            const timeRange = formatProgramTime(currentProgram);
+            
+            programElement.innerHTML = `
+                <div class="text-sm text-white font-semibold truncate mb-1">${currentProgram.title || 'Current Program'}</div>
+                <div class="text-xs text-gray-400 mb-1">${timeRange}</div>
+                <div class="w-full bg-gray-700 rounded-full h-1">
+                    <div class="bg-slate-400 h-1 rounded-full transition-all duration-300" style="width: ${progress}%"></div>
+                </div>
+            `;
+        } else if (programElement) {
+            programElement.innerHTML = `
+                <div class="text-xs text-gray-500">
+                    No program information
+                </div>
+            `;
+        }
+    });
+}
+
+// Function to update the current program info bar
+function updateCurrentProgramBar() {
+    const programBar = document.getElementById('currentProgramBar');
+    
+    if (!currentChannel) {
+        programBar.style.display = 'none';
+        return;
+    }
+    
+    const currentProgram = getCurrentProgram(currentChannel);
+    
+    // Update channel name
+    document.getElementById('currentChannelName').textContent = currentChannel.name;
+    
+    if (currentProgram) {
+        // Update program info
+        document.getElementById('currentProgramTitle').textContent = currentProgram.title || 'Current Program';
+        document.getElementById('currentProgramTime').textContent = formatProgramTime(currentProgram);
+        
+        // Update progress bar
+        const progress = getProgramProgress(currentProgram);
+        document.getElementById('currentProgramProgress').style.width = `${progress}%`;
+        
+        // Show the bar
+        programBar.style.display = 'block';
+    } else {
+        // No current program
+        document.getElementById('currentProgramTitle').textContent = 'No program information';
+        document.getElementById('currentProgramTime').textContent = '';
+        document.getElementById('currentProgramProgress').style.width = '0%';
+        
+        // Show the bar anyway with channel name
+        programBar.style.display = 'block';
+    }
+}
+
+// Function to add a channel to recently watched list
+function addToRecentChannels(channel) {
+    try {
+        // Get existing recent channels
+        let recentChannels = JSON.parse(localStorage.getItem('recentChannels') || '[]');
+        
+        // Create channel entry
+        const channelEntry = {
+            id: channel.id,
+            name: channel.name,
+            logo_url: channel.logo_url || null,
+            last_watched: new Date().toLocaleString()
+        };
+        
+        // Remove if already exists (to avoid duplicates)
+        recentChannels = recentChannels.filter(recent => recent.id !== channel.id);
+        
+        // Add to beginning of array
+        recentChannels.unshift(channelEntry);
+        
+        // Keep only last 10 channels
+        recentChannels = recentChannels.slice(0, 10);
+        
+        // Save back to localStorage
+        localStorage.setItem('recentChannels', JSON.stringify(recentChannels));
+        
+        console.log('Added to recent channels:', channel.name);
+    } catch (error) {
+        console.warn('Could not save to recent channels:', error);
+    }
+}
+</script>
+
+{% endblock %}

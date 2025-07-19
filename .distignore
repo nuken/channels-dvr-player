@@ -1,0 +1,49 @@
+# Files and directories to exclude from distribution package
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Development
+.env
+*.log
+.DS_Store
+Thumbs.db
+
+# Database files (users should create their own)
+config/channels.db
+config/setup.flag
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Distribution
+dist/
+build/
+*.egg-info/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# OS specific
+.DS_Store
+Thumbs.db
+desktop.ini
