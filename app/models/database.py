@@ -57,10 +57,21 @@ class Database:
                 )
             """)
             
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS search_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel_id INTEGER NOT NULL,
+                    searched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (channel_id) REFERENCES channels (id) ON DELETE CASCADE
+                )
+            """)
+            
             # Create indexes for better performance
             conn.execute("CREATE INDEX IF NOT EXISTS idx_channels_tvg_id ON channels(tvg_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_channels_enabled ON channels(is_enabled)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_playlist_channels_order ON playlist_channels(playlist_id, sort_order)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_search_history_channel ON search_history(channel_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_search_history_searched_at ON search_history(searched_at DESC)")
     
     def get_connection(self):
         """Get database connection."""
@@ -267,7 +278,7 @@ class Channel:
                         ELSE 4
                     END,
                     name
-                LIMIT 10
+                LIMIT 100
             """, (search_query, search_query, search_query, search_query, search_query, search_query)).fetchall()
             
             channels = []
@@ -390,3 +401,77 @@ class Playlist:
         with self.db.get_connection() as conn:
             conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
             # playlist_channels will be deleted automatically due to CASCADE
+
+
+class SearchHistory:
+    """Search history model for database operations."""
+    
+    def __init__(self, db: Database):
+        self.db = db
+    
+    def add_channel(self, channel_id: int):
+        """Add a channel to search history. If it already exists, update the timestamp.
+        Maintains a maximum of 12 channels by removing the oldest entry when needed."""
+        with self.db.get_connection() as conn:
+            # Remove existing entry for this channel if it exists
+            conn.execute("DELETE FROM search_history WHERE channel_id = ?", (channel_id,))
+            
+            # Add the channel with current timestamp
+            conn.execute(
+                "INSERT INTO search_history (channel_id) VALUES (?)",
+                (channel_id,)
+            )
+            
+            # Keep only the 12 most recent entries
+            conn.execute("""
+                DELETE FROM search_history 
+                WHERE id NOT IN (
+                    SELECT id FROM search_history 
+                    ORDER BY searched_at DESC 
+                    LIMIT 12
+                )
+            """)
+    
+    def get_history_channels(self) -> List[Dict[str, Any]]:
+        """Get the search history as a list of channels, ordered by most recent first."""
+        with self.db.get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT c.*, sh.searched_at
+                FROM search_history sh
+                JOIN channels c ON sh.channel_id = c.id
+                WHERE c.is_enabled = 1
+                ORDER BY sh.searched_at DESC
+                LIMIT 12
+            """).fetchall()
+            
+            channels = []
+            for row in rows:
+                channel = dict(row)
+                # Parse attributes JSON
+                if channel['attributes']:
+                    try:
+                        channel['attributes'] = json.loads(channel['attributes'])
+                    except json.JSONDecodeError:
+                        channel['attributes'] = {}
+                else:
+                    channel['attributes'] = {}
+                
+                # Add display fields for the UI
+                channel['number'] = channel.get('channel_number', '')
+                channel['group'] = channel.get('group_title', '')
+                
+                channels.append(channel)
+            
+            return channels
+    
+    def clear_history(self):
+        """Clear all search history."""
+        with self.db.get_connection() as conn:
+            conn.execute("DELETE FROM search_history")
+    
+    def get_history_count(self) -> int:
+        """Get the number of channels in search history."""
+        with self.db.get_connection() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM search_history").fetchone()
+            return row[0] if row else 0

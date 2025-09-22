@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, session, send_from_directory, make_response
 from config.app_config import AppConfig
 from app.services.channels_dvr_services import discover_dvr_server, ChannelsDVRClient
-from app.models.database import Database, Channel, Playlist
+from app.models.database import Database, Channel, Playlist, SearchHistory
 from app.services.m3u_parser import M3UParser
 from app.constants import *
 import requests
@@ -492,6 +492,7 @@ def playlist():
     db = Database()
     playlist_model = Playlist(db)
     channel_model = Channel(db)
+    search_history = SearchHistory(db)
     
     # Get all playlists
     playlists = playlist_model.get_all()
@@ -499,6 +500,22 @@ def playlist():
     # Add channels to each playlist
     for playlist in playlists:
         playlist['channels'] = playlist_model.get_channels(playlist['id'])
+    
+    # Add search history as a special playlist (read-only)
+    history_channels = search_history.get_history_channels()
+    if history_channels:  # Only include if there's search history
+        search_history_playlist = {
+            'id': 'search-history',
+            'name': '🕒 Search History',
+            'description': 'Recently searched channels (read-only)',
+            'channels': history_channels,
+            'isSearchHistory': True,
+            'isReadOnly': True,
+            'created_at': '',
+            'updated_at': ''
+        }
+        # Add at the beginning of the playlists list
+        playlists.insert(0, search_history_playlist)
     
     # Get all channels for the channel browser
     all_channels = channel_model.get_all()
@@ -519,6 +536,7 @@ def player():
     db = Database()
     playlist_model = Playlist(db)
     channel_model = Channel(db)
+    search_history = SearchHistory(db)
     
     # Get all playlists
     playlists = playlist_model.get_all()
@@ -526,6 +544,21 @@ def player():
     # Add channels to each playlist
     for playlist in playlists:
         playlist['channels'] = playlist_model.get_channels(playlist['id'])
+    
+    # Add search history as a special playlist
+    history_channels = search_history.get_history_channels()
+    if history_channels:  # Only include if there's search history
+        search_history_playlist = {
+            'id': 'search-history',
+            'name': '🕒 Search History',
+            'description': 'Recently searched channels',
+            'channels': history_channels,
+            'isSearchHistory': True,
+            'created_at': '',
+            'updated_at': ''
+        }
+        # Add at the beginning of the playlists list
+        playlists.insert(0, search_history_playlist)
     
     # Get all channels for reference
     all_channels = channel_model.get_all()
@@ -714,7 +747,7 @@ def search():
         
         # If we have a DVR server, also search for programs
         server_info = discover_dvr_server(timeout=2)
-        if server_info and len(results) < 10:  # Limit total results
+        if server_info and len(results) < 100:  # Limit total results
             try:
                 # Get guide data and search for programs
                 client = ChannelsDVRClient()
@@ -724,13 +757,15 @@ def search():
                     response = requests.get(guide_url, timeout=5)
                     if response.status_code == 200:
                         programs = search_programs_in_guide(response.text, query, channels)
-                        results.extend(programs[:5])  # Limit to 5 program results
+                        # Add programs up to the remaining space in our 100 result limit
+                        remaining_slots = 100 - len(results)
+                        results.extend(programs[:remaining_slots])
             except Exception as e:
                 logger.warning(f"Could not search programs: {e}")
         
         return jsonify({
             'success': True,
-            'results': results[:10]  # Limit total results to 10
+            'results': results[:100]  # Limit total results to 100
         })
         
     except Exception as e:
@@ -862,12 +897,28 @@ def get_playlists():
     try:
         db = Database()
         playlist_model = Playlist(db)
+        search_history = SearchHistory(db)
         
         playlists = playlist_model.get_all()
         
         # Add channels to each playlist
         for playlist in playlists:
             playlist['channels'] = playlist_model.get_channels(playlist['id'])
+        
+        # Add search history as a special playlist
+        history_channels = search_history.get_history_channels()
+        if history_channels:  # Only include if there's search history
+            search_history_playlist = {
+                'id': 'search-history',
+                'name': '🕒 Search History',
+                'description': 'Recently searched channels',
+                'channels': history_channels,
+                'isSearchHistory': True,
+                'created_at': '',
+                'updated_at': ''
+            }
+            # Add at the beginning of the playlists list
+            playlists.insert(0, search_history_playlist)
         
         return jsonify({
             'success': True,
@@ -930,6 +981,82 @@ def save_playlists():
         })
         
     except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# Search History API endpoints
+@bp.route('/api/search-history/add', methods=['POST'])
+def add_to_search_history():
+    """Add a channel to search history."""
+    try:
+        data = request.json or {}
+        channel_id = data.get('channel_id')
+        
+        if not channel_id:
+            return jsonify({
+                'success': False,
+                'error': 'Channel ID is required'
+            }), 400
+        
+        db = Database()
+        search_history = SearchHistory(db)
+        search_history.add_channel(channel_id)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Channel added to search history'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error adding to search history: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@bp.route('/api/search-history')
+def get_search_history():
+    """Get search history as a playlist."""
+    try:
+        db = Database()
+        search_history = SearchHistory(db)
+        channels = search_history.get_history_channels()
+        
+        return jsonify({
+            'success': True,
+            'playlist': {
+                'id': 'search-history',
+                'name': '🕒 Search History',
+                'description': 'Recently searched channels',
+                'channels': channels,
+                'isSearchHistory': True
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting search history: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@bp.route('/api/search-history/clear', methods=['POST'])
+def clear_search_history():
+    """Clear all search history."""
+    try:
+        db = Database()
+        search_history = SearchHistory(db)
+        search_history.clear_history()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Search history cleared'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error clearing search history: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

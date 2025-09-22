@@ -43,6 +43,22 @@
                 </div>
             </div>
 
+            <!-- Quick Actions Card -->
+            <div class="bg-gradient-to-br from-green-800/40 to-green-900/60 backdrop-blur-xl border border-green-600/30 rounded-xl shadow-lg">
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-500 rounded-full flex items-center justify-center">
+                            <i class="fas fa-sync-alt text-white text-lg"></i>
+                        </div>
+                        <div class="text-green-300 text-xs">Last sync: Recently</div>
+                    </div>
+                    <h3 class="text-white font-semibold text-lg mb-4">Quick Sync</h3>
+                    <button onclick="quickSync()" class="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200">
+                        <i class="fas fa-sync-alt mr-2"></i>Sync Channels
+                    </button>
+                </div>
+            </div>
+
             <!-- Channel Stats Card -->
             <div class="bg-gradient-to-br from-purple-800/40 to-purple-900/60 backdrop-blur-xl border border-purple-600/30 rounded-xl shadow-lg">
                 <div class="p-6">
@@ -63,21 +79,7 @@
                 </div>
             </div>
 
-            <!-- Quick Actions Card -->
-            <div class="bg-gradient-to-br from-green-800/40 to-green-900/60 backdrop-blur-xl border border-green-600/30 rounded-xl shadow-lg">
-                <div class="p-6">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-500 rounded-full flex items-center justify-center">
-                            <i class="fas fa-sync-alt text-white text-lg"></i>
-                        </div>
-                        <div class="text-green-300 text-xs">Last sync: Recently</div>
-                    </div>
-                    <h3 class="text-white font-semibold text-lg mb-4">Quick Sync</h3>
-                    <button onclick="quickSync()" class="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200">
-                        <i class="fas fa-sync-alt mr-2"></i>Update Channels
-                    </button>
-                </div>
-            </div>
+
         </div>
 
         <!-- Navigation Menu -->
@@ -93,6 +95,22 @@
                         <p class="text-gray-400 text-sm mb-4">Configure DVR server connection and view detailed server information</p>
                         <div class="inline-flex items-center text-blue-400 text-sm font-medium">
                             Configure Server <i class="fas fa-arrow-right ml-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- Channel Sync -->
+            <a href="/setup/sync" class="block">
+                <div class="bg-gradient-to-br from-gray-800/40 to-gray-900/60 backdrop-blur-xl border border-gray-600/30 rounded-xl shadow-lg hover:border-green-500/50 transition-all duration-200 group">
+                    <div class="p-8 text-center">
+                        <div class="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
+                            <i class="fas fa-sync-alt text-white text-2xl"></i>
+                        </div>
+                        <h3 class="text-xl font-semibold text-white mb-2">Channel Sync</h3>
+                        <p class="text-gray-400 text-sm mb-4">Sync channels from DVR server, update existing or resync everything</p>
+                        <div class="inline-flex items-center text-green-400 text-sm font-medium">
+                            Sync Channels <i class="fas fa-arrow-right ml-2"></i>
                         </div>
                     </div>
                 </div>
@@ -114,21 +132,6 @@
                 </div>
             </a>
 
-            <!-- Channel Sync -->
-            <a href="/setup/sync" class="block">
-                <div class="bg-gradient-to-br from-gray-800/40 to-gray-900/60 backdrop-blur-xl border border-gray-600/30 rounded-xl shadow-lg hover:border-green-500/50 transition-all duration-200 group">
-                    <div class="p-8 text-center">
-                        <div class="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
-                            <i class="fas fa-sync-alt text-white text-2xl"></i>
-                        </div>
-                        <h3 class="text-xl font-semibold text-white mb-2">Channel Sync</h3>
-                        <p class="text-gray-400 text-sm mb-4">Sync channels from DVR server, update existing or resync everything</p>
-                        <div class="inline-flex items-center text-green-400 text-sm font-medium">
-                            Sync Channels <i class="fas fa-arrow-right ml-2"></i>
-                        </div>
-                    </div>
-                </div>
-            </a>
         </div>
 
         <script>

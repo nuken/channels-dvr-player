@@ -19,14 +19,19 @@
     <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- HLS.js for HLS stream support -->
+    {% block extra_head %}{% endblock %}
+    
+    <!-- HLS.js for HLS stream support - loaded conditionally -->
+    {% if request.endpoint == 'main.player' %}
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    {% endif %}
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
     
     <!-- Tailwind Config -->
     <script>
@@ -49,9 +54,8 @@
         }
     </script>
     
-    {% block extra_head %}{% endblock %}
 </head>
-<body class="bg-gray-900 text-gray-100 font-sans h-screen flex flex-col">
+<body class="bg-gray-900 text-gray-100 font-sans h-screen flex flex-col {% block body_class %}{% endblock %}">
     <!-- Fixed Header -->
     <header class="bg-gray-900/95 backdrop-blur-sm border-b border-gray-700/50 text-gray-100 p-6 sticky top-0 z-50 shadow-lg shadow-gray-900/20">
         <div class="max-w-{{ config.UI_THEME.max_width }} mx-auto">
@@ -110,6 +114,25 @@
             {% endblock %}
         </div>
     </footer>
+
+    <!-- JavaScript Libraries -->
+    {% block scripts %}
+    <!-- Common utilities always loaded -->
+    <script src="{{ url_for('static', filename='js/common.js') }}"></script>
+    
+    <!-- Page-specific scripts -->
+    {% if request.endpoint == 'main.index' %}
+    <script src="{{ url_for('static', filename='js/search.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/carousel.js') }}"></script>
+    {% elif request.endpoint == 'main.player' %}
+    <script src="{{ url_for('static', filename='js/player.js') }}"></script>
+    {% elif request.endpoint == 'main.playlist' %}
+    <script src="{{ url_for('static', filename='js/playlist-manager.js') }}"></script>
+    {% endif %}
+    {% endblock %}
+    
+    <!-- Page-specific inline scripts -->
+    {% block extra_scripts %}{% endblock %}
 
 </body>
 </html>

@@ -1,10 +1,4 @@
 /* Custom styles for media player theme */
 
-/* Text truncation utility */
-.line-clamp-3 {
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
+/* This file is reserved for global theme overrides and branding */
+/* Component-specific styles are in components.css */
