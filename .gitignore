@@ -77,3 +77,4 @@ coverage.xml
 
 # Local configuration overrides
 config/local_config.py
+config/setup.flag
