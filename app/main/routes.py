@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def check_dvr_availability():
     """Check if DVR server is currently available."""
-    server_info = discover_dvr_server(timeout=2)  # Quick check
+    server_info = discover_dvr_server(timeout=QUICK_CHECK_TIMEOUT)  # Quick check
     return server_info is not None
 
 def get_featured_programs(channel_ids, channels):
@@ -47,7 +47,7 @@ def get_featured_programs(channel_ids, channels):
             return []
         
         # Get guide data using existing function
-        server_info = discover_dvr_server(timeout=3)
+        server_info = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
         if not server_info:
             return []
             
@@ -60,7 +60,7 @@ def get_featured_programs(channel_ids, channels):
                 return []
                 
             # Fetch EPG data
-            response = requests.get(epg_url, timeout=10)
+            response = requests.get(epg_url, timeout=HTTP_REQUEST_TIMEOUT)
             response.raise_for_status()
             
             # Parse the guide data - this already handles time parsing and filtering
@@ -193,7 +193,7 @@ def get_featured_programs(channel_ids, channels):
                         'end_time': ''
                     })
         
-        result = featured_programs[:6]
+        result = featured_programs[:MAX_FEATURED_PROGRAMS]
         
         return result
         
@@ -208,7 +208,7 @@ def index():
     dvr_previously_discovered = AppConfig.get_setup_flag('dvr_discovered')
     
     # Discover DVR server
-    server_info = discover_dvr_server(timeout=5)
+    server_info = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
     
     if server_info:
         # Server discovered
@@ -343,7 +343,7 @@ def index():
                 playlist_channels = playlist_model.get_channels(featured_playlist['id'])
                 
                 # Get up to 6 channels for featured cards
-                featured_channels = playlist_channels[:6]
+                featured_channels = playlist_channels[:MAX_FEATURED_PROGRAMS]
                 
                 if featured_channels:
                     # Get current program data for these channels
@@ -372,7 +372,7 @@ def index():
 def setup():
     """Setup page route."""
     # Discover DVR server and get URLs
-    server_info = discover_dvr_server(timeout=5)
+    server_info = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
     
     if server_info:
         # Generate M3U and EPG URLs using the service
@@ -422,7 +422,7 @@ def setup():
 def setup_server():
     """Server configuration page."""
     # Discover DVR server and get URLs
-    server_info = discover_dvr_server(timeout=5)
+    server_info = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
     
     if server_info:
         # Generate M3U and EPG URLs using the service
@@ -454,7 +454,7 @@ def setup_server():
 def setup_sync():
     """Channel sync page."""
     # Discover DVR server
-    server_info = discover_dvr_server(timeout=5)
+    server_info = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
     dvr_status = "online" if server_info else "offline"
     
     # Get channel statistics
@@ -713,14 +713,14 @@ def search():
         
         # Get current program information for channels
         current_programs = {}
-        server_info = discover_dvr_server(timeout=2)
+        server_info = discover_dvr_server(timeout=QUICK_CHECK_TIMEOUT)
         if server_info:
             try:
                 client = ChannelsDVRClient()
                 guide_url = client.get_epg_url()
                 
                 if guide_url:
-                    response = requests.get(guide_url, timeout=5)
+                    response = requests.get(guide_url, timeout=DVR_DISCOVERY_TIMEOUT)
                     if response.status_code == 200:
                         current_programs = get_current_programs_for_channels(response.text, channels)
             except Exception as e:
@@ -746,26 +746,26 @@ def search():
                 results.append(channel_result)
         
         # If we have a DVR server, also search for programs
-        server_info = discover_dvr_server(timeout=2)
-        if server_info and len(results) < 100:  # Limit total results
+        server_info = discover_dvr_server(timeout=QUICK_CHECK_TIMEOUT)
+        if server_info and len(results) < MAX_TOTAL_SEARCH_RESULTS:  # Limit total results
             try:
                 # Get guide data and search for programs
                 client = ChannelsDVRClient()
                 guide_url = client.get_epg_url()
                 
                 if guide_url:
-                    response = requests.get(guide_url, timeout=5)
+                    response = requests.get(guide_url, timeout=DVR_DISCOVERY_TIMEOUT)
                     if response.status_code == 200:
                         programs = search_programs_in_guide(response.text, query, channels)
-                        # Add programs up to the remaining space in our 100 result limit
-                        remaining_slots = 100 - len(results)
+                        # Add programs up to the remaining space in our result limit
+                        remaining_slots = MAX_TOTAL_SEARCH_RESULTS - len(results)
                         results.extend(programs[:remaining_slots])
             except Exception as e:
                 logger.warning(f"Could not search programs: {e}")
         
         return jsonify({
             'success': True,
-            'results': results[:100]  # Limit total results to 100
+            'results': results[:MAX_TOTAL_SEARCH_RESULTS]  # Limit total results
         })
         
     except Exception as e:
@@ -834,7 +834,7 @@ def search_programs_in_guide(guide_xml, query, channels):
                     'artwork_url': None  # Could be enhanced later
                 })
                 
-                if len(results) >= 5:  # Limit program results
+                if len(results) >= MAX_PROGRAM_RESULTS:  # Limit program results
                     break
                     
             except Exception as e:
@@ -1108,7 +1108,7 @@ def get_guide_data():
                 return jsonify({})
             
             # Fetch EPG data
-            response = requests.get(epg_url, timeout=30)
+            response = requests.get(epg_url, timeout=HTTP_REQUEST_TIMEOUT)
             response.raise_for_status()
             
             # Parse XMLTV data
@@ -1299,7 +1299,7 @@ def proxy_stream(channel_id):
             
             # For HDHomeRun comptat streams, try h264 codec instead of copy for better browser compatibility
             # This helps with AAC audio streams that don't work well with codec=copy
-            if 'hdhomerun' in stream_url.lower() or '8089' in stream_url:
+            if 'hdhomerun' in stream_url.lower() or str(CHANNELS_DVR_DEFAULT_PORT) in stream_url:
                 params['codec'] = ['h264']
                 logger.info(f"Stream detected, using h264 codec for better browser compatibility")
             else:
@@ -1310,7 +1310,7 @@ def proxy_stream(channel_id):
             proxied_url = f"{base_url}?{new_query}"
         else:
             # For HDHomeRun  compat streams, try h264 codec instead of copy
-            if 'hdhomerun' in stream_url.lower() or '8089' in stream_url:
+            if 'hdhomerun' in stream_url.lower() or str(CHANNELS_DVR_DEFAULT_PORT) in stream_url:
                 proxied_url = f"{stream_url}?format={format_param}&codec=h264"
                 logger.info(f"Stream detected, using h264 codec for better browser compatibility")
             else:
@@ -1321,7 +1321,7 @@ def proxy_stream(channel_id):
         # Stream the content from Channels DVR
         def generate():
             try:
-                with requests.get(proxied_url, stream=True, timeout=30) as r:
+                with requests.get(proxied_url, stream=True, timeout=HTTP_REQUEST_TIMEOUT) as r:
                     r.raise_for_status()
                     logger.info(f"Channels DVR response: {r.status_code}, Content-Type: {r.headers.get('content-type')}")
                     
@@ -1397,7 +1397,7 @@ def factory_reset():
         from config.app_config import AppConfig
         
         # Delete the database file
-        db_path = "config/channels.db"
+        db_path = DEFAULT_DB_PATH
         if os.path.exists(db_path):
             os.remove(db_path)
             logger.info("Database file deleted")

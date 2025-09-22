@@ -3,6 +3,11 @@ import logging
 from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
 from threading import Event
 from typing import Optional, Dict, Any
+from app.constants import (
+    DVR_DISCOVERY_DEFAULT_TIMEOUT, 
+    CHANNELS_DVR_DEFAULT_PORT, 
+    EPG_DURATION_SECONDS
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,7 +39,7 @@ class ChannelsListener(ServiceListener):
 class ChannelsDVRClient:
     """A client for discovering and interacting with Channels DVR servers."""
     
-    def __init__(self, timeout: int = 10):
+    def __init__(self, timeout: int = DVR_DISCOVERY_DEFAULT_TIMEOUT):
         self.timeout = timeout
         self._cached_server_info = None
         self._zeroconf = None
@@ -117,9 +122,9 @@ class ChannelsDVRClient:
             return None
         
         base_url = server_info['url']
-        return f"{base_url}/devices/{device}/guide/xmltv?duration=14400"
+        return f"{base_url}/devices/{device}/guide/xmltv?duration={EPG_DURATION_SECONDS}"
 
-def discover_dvr_server(timeout: int = 10) -> Optional[Dict[str, Any]]:
+def discover_dvr_server(timeout: int = DVR_DISCOVERY_DEFAULT_TIMEOUT) -> Optional[Dict[str, Any]]:
     """Discover DVR server via mDNS with improved error handling."""
     zeroconf = None
     try:
@@ -140,7 +145,7 @@ def discover_dvr_server(timeout: int = 10) -> Optional[Dict[str, Any]]:
                 logger.warning("No valid IP address found for DVR server")
                 return None
             
-            port = info.port or 8089
+            port = info.port or CHANNELS_DVR_DEFAULT_PORT
             
             server_info = {
                 "name": info.name,

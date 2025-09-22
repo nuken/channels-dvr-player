@@ -6,11 +6,12 @@ import json
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from pathlib import Path
+from app.constants import DEFAULT_DB_PATH, MAX_SEARCH_HISTORY
 
 class Database:
     """Database connection and management."""
     
-    def __init__(self, db_path: str = "config/channels.db"):
+    def __init__(self, db_path: str = DEFAULT_DB_PATH):
         self.db_path = db_path
         self.init_db()
     
@@ -422,13 +423,13 @@ class SearchHistory:
                 (channel_id,)
             )
             
-            # Keep only the 12 most recent entries
-            conn.execute("""
+            # Keep only the most recent entries
+            conn.execute(f"""
                 DELETE FROM search_history 
                 WHERE id NOT IN (
                     SELECT id FROM search_history 
                     ORDER BY searched_at DESC 
-                    LIMIT 12
+                    LIMIT {MAX_SEARCH_HISTORY}
                 )
             """)
     
@@ -436,13 +437,13 @@ class SearchHistory:
         """Get the search history as a list of channels, ordered by most recent first."""
         with self.db.get_connection() as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("""
+            rows = conn.execute(f"""
                 SELECT c.*, sh.searched_at
                 FROM search_history sh
                 JOIN channels c ON sh.channel_id = c.id
                 WHERE c.is_enabled = 1
                 ORDER BY sh.searched_at DESC
-                LIMIT 12
+                LIMIT {MAX_SEARCH_HISTORY}
             """).fetchall()
             
             channels = []
