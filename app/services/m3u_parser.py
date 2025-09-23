@@ -21,15 +21,28 @@ class M3UParser:
     def fetch_m3u_content(self, timeout: int = 30) -> Optional[str]:
         """Fetch M3U content from Channels DVR server."""
         try:
-            with ChannelsDVRClient(timeout=timeout) as client:
-                m3u_url = client.get_m3u_url()
-                if not m3u_url:
-                    logger.error("Failed to get M3U URL from Channels DVR")
-                    return None
-                
+            # Try to use configured server first
+            from config.app_config import AppConfig
+            configured_server = AppConfig.get_setup_flag('configured_server')
+            
+            if configured_server:
+                # Use configured server directly
+                m3u_url = f"{configured_server['url']}/devices/ANY/channels.m3u?format=hls&codec=copy"
+                logger.info(f"Using configured server for M3U: {m3u_url}")
                 response = requests.get(m3u_url, timeout=timeout)
                 response.raise_for_status()
                 return response.text
+            else:
+                # Fallback to discovery
+                with ChannelsDVRClient(timeout=timeout) as client:
+                    m3u_url = client.get_m3u_url()
+                    if not m3u_url:
+                        logger.error("Failed to get M3U URL from Channels DVR")
+                        return None
+                    
+                    response = requests.get(m3u_url, timeout=timeout)
+                    response.raise_for_status()
+                    return response.text
                 
         except Exception as e:
             logger.error(f"Error fetching M3U content: {e}")

@@ -3,6 +3,7 @@ from config.app_config import AppConfig
 from app.services.channels_dvr_services import discover_dvr_server, ChannelsDVRClient
 from app.models.database import Database, Channel, Playlist, SearchHistory
 from app.services.m3u_parser import M3UParser
+from app.services.artwork_service import ArtworkService
 from app.constants import *
 import requests
 import xml.etree.ElementTree as ET
@@ -15,8 +16,37 @@ logger = logging.getLogger(__name__)
 
 def check_dvr_availability():
     """Check if DVR server is currently available."""
+    # First try to use configured server
+    configured_server = AppConfig.get_setup_flag('configured_server')
+    if configured_server:
+        try:
+            import requests
+            test_url = f"http://{configured_server['ip_address']}:{configured_server['port']}/status"
+            response = requests.get(test_url, timeout=QUICK_CHECK_TIMEOUT)
+            return response.status_code == 200
+        except:
+            pass
+    
+    # Fallback to discovery
     server_info = discover_dvr_server(timeout=QUICK_CHECK_TIMEOUT)  # Quick check
     return server_info is not None
+
+def get_current_server_info():
+    """Get current server info, preferring configured server over discovery."""
+    # First try configured server
+    configured_server = AppConfig.get_setup_flag('configured_server')
+    if configured_server:
+        try:
+            import requests
+            test_url = f"http://{configured_server['ip_address']}:{configured_server['port']}/status"
+            response = requests.get(test_url, timeout=QUICK_CHECK_TIMEOUT)
+            if response.status_code == 200:
+                return configured_server
+        except:
+            pass
+    
+    # Fallback to discovery
+    return discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
 
 def get_featured_programs(channel_ids, channels):
     """Get current program information for featured channels."""
@@ -73,6 +103,7 @@ def get_featured_programs(channel_ids, channels):
         # Build featured programs
         featured_programs = []
         now = datetime.now()
+        artwork_service = ArtworkService()
         
         for channel in channels:
             channel_id = channel['id']
@@ -129,9 +160,13 @@ def get_featured_programs(channel_ids, channels):
                     start_time = now
                     end_time = now
                 
+                # Get enhanced artwork information  
+                artwork_info = artwork_service.get_artwork_with_fallback(current_program, channel)
+                
                 featured_programs.append({
                     'channel': channel,
                     'program': current_program,
+                    'artwork_info': artwork_info,
                     'progress': progress,
                     'remaining_minutes': remaining_minutes,
                     'start_time': start_time.strftime('%I:%M %p'),
@@ -154,13 +189,21 @@ def get_featured_programs(channel_ids, channels):
                 if upcoming_program:
                     try:
                         start_time = datetime.fromisoformat(upcoming_program['start_time'].replace('Z', ''))
+                        
+                        # Create program dict for upcoming show
+                        upcoming_program_info = {
+                            'title': f"Coming Up: {upcoming_program['title']}",
+                            'description': upcoming_program.get('description', ''),
+                            'artwork_url': upcoming_program.get('artwork_url')
+                        }
+                        
+                        # Get enhanced artwork information for upcoming program
+                        artwork_info = artwork_service.get_artwork_with_fallback(upcoming_program, channel)
+                        
                         featured_programs.append({
                             'channel': channel,
-                            'program': {
-                                'title': f"Coming Up: {upcoming_program['title']}",
-                                'description': upcoming_program.get('description', ''),
-                                'artwork_url': upcoming_program.get('artwork_url')
-                            },
+                            'program': upcoming_program_info,
+                            'artwork_info': artwork_info,
                             'progress': 0,
                             'remaining_minutes': 0,
                             'start_time': start_time.strftime('%I:%M %p'),
@@ -168,12 +211,16 @@ def get_featured_programs(channel_ids, channels):
                         })
                     except Exception:
                         # Fallback to basic channel info
+                        fallback_program = {
+                            'title': 'Live TV',
+                            'description': f'Currently broadcasting on {channel["name"]}'
+                        }
+                        artwork_info = artwork_service.get_artwork_with_fallback(fallback_program, channel)
+                        
                         featured_programs.append({
                             'channel': channel,
-                            'program': {
-                                'title': 'Live TV',
-                                'description': f'Currently broadcasting on {channel["name"]}'
-                            },
+                            'program': fallback_program,
+                            'artwork_info': artwork_info,
                             'progress': 0,
                             'remaining_minutes': 0,
                             'start_time': '',
@@ -181,12 +228,16 @@ def get_featured_programs(channel_ids, channels):
                         })
                 else:
                     # No programs available
+                    fallback_program = {
+                        'title': 'Live TV',
+                        'description': f'Currently broadcasting on {channel["name"]}'
+                    }
+                    artwork_info = artwork_service.get_artwork_with_fallback(fallback_program, channel)
+                    
                     featured_programs.append({
                         'channel': channel,
-                        'program': {
-                            'title': 'Live TV',
-                            'description': f'Currently broadcasting on {channel["name"]}'
-                        },
+                        'program': fallback_program,
+                        'artwork_info': artwork_info,
                         'progress': 0,
                         'remaining_minutes': 0,
                         'start_time': '',
@@ -204,20 +255,65 @@ def get_featured_programs(channel_ids, channels):
 @bp.route('/')
 def index():
     """Home page route."""
+    # Check if the app has been fully configured
+    server_configured = AppConfig.get_setup_flag('server_configured')
+    setup_completed = AppConfig.get_setup_flag('setup_completed')
+    
+    # Auto-complete setup if server is configured and channels exist
+    if server_configured and not setup_completed:
+        try:
+            db = Database()
+            channel_model = Channel(db)
+            all_channels = channel_model.get_all()
+            enabled_channels = [ch for ch in all_channels if ch.get('is_enabled', False)]
+            
+            # If we have enabled channels, auto-complete the setup
+            if len(enabled_channels) > 0:
+                AppConfig.set_setup_flag('setup_completed', True)
+                setup_completed = True
+                logger.info(f"Auto-completed setup with {len(enabled_channels)} enabled channels")
+        except Exception as e:
+            logger.error(f"Error checking channels for auto-completion: {e}")
+    
+    # If not configured or setup not completed, redirect to setup
+    if not server_configured or not setup_completed:
+        from flask import redirect, url_for
+        return redirect(url_for('main.setup_server'))
+    
+    # System is fully configured - continue with normal homepage logic
     # Check if DVR was previously discovered
     dvr_previously_discovered = AppConfig.get_setup_flag('dvr_discovered')
     
-    # Discover DVR server
-    server_info = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
+    # Get the configured server info
+    configured_server = AppConfig.get_setup_flag('configured_server')
     
-    if server_info:
-        # Server discovered
-        dvr_currently_found = True
-        # Mark as discovered in setup.flag for future visits
-        AppConfig.set_setup_flag('dvr_discovered', True)
+    # Try to reach the configured server
+    server_info = None
+    dvr_currently_found = False
+    
+    if configured_server:
+        # Try to validate the configured server is still reachable
+        try:
+            import requests
+            test_url = f"http://{configured_server['ip_address']}:{configured_server['port']}/status"
+            response = requests.get(test_url, timeout=5)
+            if response.status_code == 200:
+                server_info = configured_server
+                dvr_currently_found = True
+        except:
+            # If configured server fails, try discovery as fallback
+            discovered_server = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
+            if discovered_server:
+                server_info = discovered_server
+                dvr_currently_found = True
+                # Update configured server if discovery found something different
+                if (discovered_server['ip_address'] != configured_server['ip_address'] or 
+                    discovered_server['port'] != configured_server['port']):
+                    AppConfig.set_setup_flag('configured_server', discovered_server)
     else:
-        # Server not discovered
-        dvr_currently_found = False
+        # No configured server, try discovery
+        server_info = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
+        dvr_currently_found = server_info is not None
     
     # Only show discovery message if server is found AND it wasn't previously discovered
     show_discovery_message = dvr_currently_found and not dvr_previously_discovered
@@ -354,6 +450,17 @@ def index():
             logger.error(f"Error getting featured programs: {e}")
             featured_programs = []
     
+    # Get the selected playlist name for display
+    selected_playlist_name = ""
+    if featured_programs and 'selected_playlist_id' in session:
+        try:
+            for playlist in all_playlists:
+                if playlist['id'] == session['selected_playlist_id']:
+                    selected_playlist_name = playlist['name']
+                    break
+        except Exception:
+            pass
+    
     # Check if auto-scan was attempted (keeping for backward compatibility)
     auto_scan_attempted = AppConfig.get_setup_flag('auto_scan_attempted')
     
@@ -366,21 +473,34 @@ def index():
                          enabled_channels_count=len([ch for ch in all_channels if ch.get('is_enabled', False)]),
                          playlists_count=len(all_playlists),
                          featured_programs=featured_programs,
+                         selected_playlist_name=selected_playlist_name,
                          auto_scan_attempted=auto_scan_attempted)
 
 @bp.route('/setup')
 def setup():
     """Setup page route."""
-    # Discover DVR server and get URLs
-    server_info = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
+    # Get configured server info
+    server_info = get_current_server_info()
     
     if server_info:
         # Generate M3U and EPG URLs using the service
         try:
             from app.services.channels_dvr_services import ChannelsDVRClient
+            
+            # Override the discovery method temporarily to use our specific server
+            original_discover = ChannelsDVRClient.discover_server
+            def mock_discover(self):
+                return server_info
+            
+            ChannelsDVRClient.discover_server = mock_discover
+            
             with ChannelsDVRClient() as client:
                 m3u_url = client.get_m3u_url(device="ANY", format="hls", codec="copy")
                 epg_url = client.get_epg_url(device="ANY")
+            
+            # Restore original method
+            ChannelsDVRClient.discover_server = original_discover
+            
         except Exception as e:
             logger.error(f"Error getting URLs: {e}")
             m3u_url = None
@@ -420,32 +540,59 @@ def setup():
 
 @bp.route('/setup/server')
 def setup_server():
-    """Server configuration page."""
-    # Discover DVR server and get URLs
-    server_info = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
+    """Server configuration page - first step in setup process."""
+    # Always attempt discovery to show available servers
+    discovered_servers = []
     
-    if server_info:
-        # Generate M3U and EPG URLs using the service
+    # Try discovery multiple times to catch different servers
+    for attempt in range(3):  # Try 3 times with short timeouts
+        server_info = discover_dvr_server(timeout=2)  # Short timeout for each attempt
+        if server_info and server_info not in discovered_servers:
+            discovered_servers.append(server_info)
+    
+    # Get any previously configured server
+    configured_server = AppConfig.get_setup_flag('configured_server')
+    
+    # Default to showing discovered servers
+    if discovered_servers:
+        dvr_status = "online"
+        primary_server = discovered_servers[0]  # Use first discovered as primary
+    else:
+        dvr_status = "offline"
+        primary_server = configured_server if configured_server else None
+    
+    # Generate URLs if we have a server
+    m3u_url = None
+    epg_url = None
+    
+    if primary_server:
         try:
+            # Create temporary client with this server info
             from app.services.channels_dvr_services import ChannelsDVRClient
+            
+            # Override the discovery method temporarily to use our specific server
+            original_discover = ChannelsDVRClient.discover_server
+            def mock_discover(self):
+                return primary_server
+            
+            ChannelsDVRClient.discover_server = mock_discover
+            
             with ChannelsDVRClient() as client:
                 m3u_url = client.get_m3u_url(device="ANY", format="hls", codec="copy")
                 epg_url = client.get_epg_url(device="ANY")
+            
+            # Restore original method
+            ChannelsDVRClient.discover_server = original_discover
+            
         except Exception as e:
             logger.error(f"Error getting URLs: {e}")
-            m3u_url = None
-            epg_url = None
-            
-        dvr_status = "online"
-    else:
-        m3u_url = None
-        epg_url = None
-        dvr_status = "offline"
     
     return render_template('setup_server.html', 
                          config=AppConfig, 
-                         server_info=server_info,
-                         dvr_available=check_dvr_availability(),
+                         server_info=primary_server,
+                         discovered_servers=discovered_servers,
+                         configured_server=configured_server,
+                         dvr_available=len(discovered_servers) > 0,
                          m3u_url=m3u_url,
                          epg_url=epg_url,
                          dvr_status=dvr_status)
@@ -453,8 +600,8 @@ def setup_server():
 @bp.route('/setup/sync')
 def setup_sync():
     """Channel sync page."""
-    # Discover DVR server
-    server_info = discover_dvr_server(timeout=DVR_DISCOVERY_TIMEOUT)
+    # Get configured server info
+    server_info = get_current_server_info()
     dvr_status = "online" if server_info else "offline"
     
     # Get channel statistics
@@ -573,6 +720,158 @@ def player():
                          playlists_count=len(playlists))
 
 # API Routes for channel management
+@bp.route('/api/setup/complete', methods=['POST'])
+def complete_setup():
+    """Mark the setup process as complete."""
+    try:
+        # Check if we have the minimum required configuration
+        server_configured = AppConfig.get_setup_flag('server_configured')
+        
+        if not server_configured:
+            return jsonify({
+                'success': False,
+                'error': 'Server must be configured before completing setup'
+            }), 400
+        
+        # Check if we have at least some enabled channels
+        db = Database()
+        channel_model = Channel(db)
+        all_channels = channel_model.get_all()
+        enabled_channels = [ch for ch in all_channels if ch.get('is_enabled', False)]
+        
+        if len(enabled_channels) == 0:
+            return jsonify({
+                'success': False,
+                'error': 'At least one channel must be enabled before completing setup'
+            }), 400
+        
+        # Mark setup as complete
+        AppConfig.set_setup_flag('setup_completed', True)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Setup completed successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error completing setup: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@bp.route('/api/server/test', methods=['POST'])
+def test_server_connection():
+    """Test connection to a DVR server."""
+    try:
+        data = request.json or {}
+        ip_address = data.get('ip_address', '').strip()
+        port = data.get('port', '').strip()
+        
+        if not ip_address:
+            return jsonify({
+                'success': False,
+                'error': 'IP address is required'
+            }), 400
+            
+        # Validate port
+        try:
+            port = int(port) if port else CHANNELS_DVR_DEFAULT_PORT
+            if port < 1 or port > 65535:
+                raise ValueError("Port out of range")
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid port number'
+            }), 400
+        
+        # Test the server connection
+        try:
+            import requests
+            test_url = f"http://{ip_address}:{port}/status"
+            response = requests.get(test_url, timeout=5)
+            response.raise_for_status()
+            
+            return jsonify({
+                'success': True,
+                'message': f'Successfully connected to server at {ip_address}:{port}'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Unable to connect to server at {ip_address}:{port}'
+            }), 400
+        
+    except Exception as e:
+        logger.error(f"Error testing server connection: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@bp.route('/api/server/configure', methods=['POST'])
+def configure_server():
+    """Configure and save the DVR server connection."""
+    try:
+        data = request.json or {}
+        ip_address = data.get('ip_address', '').strip()
+        port = data.get('port', '').strip()
+        
+        if not ip_address:
+            return jsonify({
+                'success': False,
+                'error': 'IP address is required'
+            }), 400
+            
+        # Validate port
+        try:
+            port = int(port) if port else CHANNELS_DVR_DEFAULT_PORT
+            if port < 1 or port > 65535:
+                raise ValueError("Port out of range")
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid port number'
+            }), 400
+        
+        # Test the server connection
+        try:
+            import requests
+            test_url = f"http://{ip_address}:{port}/status"
+            response = requests.get(test_url, timeout=10)
+            response.raise_for_status()
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Unable to connect to server at {ip_address}:{port}. Please verify the server is running and accessible.'
+            }), 400
+        
+        # Save the server configuration
+        server_config = {
+            'ip_address': ip_address,
+            'port': port,
+            'url': f"http://{ip_address}:{port}",
+            'name': data.get('name', f'Channels DVR Server ({ip_address})')
+        }
+        
+        AppConfig.set_setup_flag('configured_server', server_config)
+        AppConfig.set_setup_flag('server_configured', True)
+        AppConfig.set_setup_flag('dvr_discovered', True)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Server configured successfully',
+            'server': server_config
+        })
+        
+    except Exception as e:
+        logger.error(f"Error configuring server: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @bp.route('/api/channels/sync', methods=['POST'])
 def sync_channels():
     """Sync channels from Channels DVR server."""
@@ -791,7 +1090,7 @@ def search_programs_in_guide(guide_xml, query, channels):
         
         # Search programmes
         current_time = datetime.now(timezone.utc)
-        end_time = current_time + timedelta(hours=6)  # Search next 6 hours
+        end_time = current_time + timedelta(hours=PROGRAM_SEARCH_HOURS)  # Search next hours
         
         for programme in root.findall('.//programme'):
             try:
@@ -1101,26 +1400,32 @@ def get_guide_data():
             return jsonify({})
         
         # Get EPG data from Channels DVR
-        with ChannelsDVRClient() as client:
-            epg_url = client.get_epg_url()
-            if not epg_url:
-                logger.warning("No EPG URL available")
-                return jsonify({})
-            
-            # Fetch EPG data
-            response = requests.get(epg_url, timeout=HTTP_REQUEST_TIMEOUT)
-            response.raise_for_status()
-            
-            # Parse XMLTV data
-            guide_data = parse_xmltv_data(response.text, tvg_ids_needed, tvg_id_to_id)
-            
-            # Create response with appropriate caching headers
-            from flask import make_response
-            json_response = make_response(jsonify(guide_data))
-            json_response.headers['Cache-Control'] = 'max-age=900'  # Cache for 15 minutes
-            json_response.headers['Expires'] = (datetime.now() + timedelta(minutes=15)).strftime('%a, %d %b %Y %H:%M:%S GMT')
-            
-            return json_response
+        configured_server = AppConfig.get_setup_flag('configured_server')
+        if configured_server:
+            # Use configured server directly
+            epg_url = f"{configured_server['url']}/devices/ANY/guide/xmltv?duration={EPG_DURATION_SECONDS}"
+        else:
+            # Fallback to discovery
+            with ChannelsDVRClient() as client:
+                epg_url = client.get_epg_url()
+                if not epg_url:
+                    logger.warning("No EPG URL available")
+                    return jsonify({})
+        
+        # Fetch EPG data
+        response = requests.get(epg_url, timeout=HTTP_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        
+        # Parse XMLTV data
+        guide_data = parse_xmltv_data(response.text, tvg_ids_needed, tvg_id_to_id)
+        
+        # Create response with appropriate caching headers
+        from flask import make_response
+        json_response = make_response(jsonify(guide_data))
+        json_response.headers['Cache-Control'] = f'max-age={GUIDE_DATA_CACHE_DURATION}'  # Cache for 15 minutes
+        json_response.headers['Expires'] = (datetime.now() + timedelta(seconds=GUIDE_DATA_CACHE_DURATION)).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        
+        return json_response
             
     except Exception as e:
         logger.error(f"Error fetching guide data: {e}")
@@ -1134,9 +1439,9 @@ def parse_xmltv_data(xmltv_content, tvg_ids_needed, tvg_id_to_channel_id):
         
         # Get current time and extend the window to include current programs
         now = datetime.now()
-        # Look back 3 hours and forward 8 hours to catch current programs and provide better coverage
-        start_time = now - timedelta(hours=3)
-        end_time = now + timedelta(hours=8)
+        # Look back and forward to catch current programs and provide better coverage
+        start_time = now - timedelta(hours=GUIDE_LOOKBACK_HOURS)
+        end_time = now + timedelta(hours=GUIDE_LOOKAHEAD_HOURS)
         
         # Make sure end_time is timezone-aware for comparison with converted program times
         end_time = end_time.replace(tzinfo=datetime.now().astimezone().tzinfo)
@@ -1424,8 +1729,8 @@ def factory_reset():
         
         return jsonify({
             'success': True,
-            'message': 'Factory reset completed successfully',
-            'redirect': '/'
+            'message': 'Factory reset completed successfully. You will be redirected to the server setup.',
+            'redirect': '/setup/server'
         })
         
     except Exception as e:

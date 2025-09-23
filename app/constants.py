@@ -21,6 +21,7 @@ DVR_DISCOVERY_DEFAULT_TIMEOUT = 10  # Default timeout for DVR discovery
 
 # UI constants
 MAX_FEATURED_PROGRAMS = 6
+MAX_SEARCH_RESULTS = 10
 MAX_PROGRAM_RESULTS = 5
 MAX_TOTAL_SEARCH_RESULTS = 100  # Maximum total search results across all sources
 MAX_SEARCH_HISTORY = 12  # Maximum number of channels in search history
